@@ -1,0 +1,54 @@
+Kubectl Installation
+ 
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+kubectl version --client
+
+
+EKSCTL Installation
+
+ARCH=amd64
+PLATFORM="$(uname -s)_$ARCH"
+FILENAME="eksctl_${PLATFORM}.tar.gz"
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz"
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_checksums.txt"
+grep "eksctl_Linux_amd64.tar.gz" eksctl_checksums.txt | sha256sum --check
+tar -xzf eksctl_Linux_amd64.tar.gz -C /tmp
+sudo mv /tmp/eksctl /usr/local/bin
+eksctl version
+
+AWS-IAM-Authenticator Installation
+
+curl -Lo aws-iam-authenticator "https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.6.11/aws-iam-authenticator_0.6.11_linux_amd64"
+chmod +x aws-iam-authenticator
+mkdir -p $HOME/bin
+cp aws-iam-authenticator $HOME/bin/aws-iam-authenticator
+export PATH=$HOME/bin:$PATH
+echo 'export PATH=$HOME/bin:$PATH' >> ~/.bashrc
+aws-iam-authenticator help
+
+EKS Cluster Creation
+
+eksctl create cluster \
+--name acecloud-devops-use1-eks-cluster \
+--tags "env=poc,prj=poc,cst=poc,owner=devops" \
+--version 1.30 \
+--region us-east-1 \
+--nodegroup-name worker-node \
+--node-type t3.small \
+--nodes-min 3 \
+--nodes-max 5 \
+--ssh-access \
+--ssh-public-key my-aws-key \
+--vpc-public-subnets=subnet-06691d7e89e1cd233,subnet-041acde096653aabc \
+--vpc-private-subnets=subnet-0832d28a2826afcc5,subnet-0ddf4bbc494f9b94f \
+--node-private-networking
+
+Access EKS Cluster via CLI
+
+aws eks update-kubeconfig --name acecloud-devops-use1-eks-cluster --region us-east-1
+
+To delete once its created successfully
+eksctl delete cluster --name=acecloud-devops-use1-eks-cluster --region=us-east-1
