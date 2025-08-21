@@ -1,0 +1,119 @@
+#!/bin/bash
+set -euo pipefail
+
+VPC_ID=$1
+
+if [ -z "$VPC_ID" ]; then
+  echo "Usage: $0 <vpc-id>"
+  exit 1
+fi
+
+echo "Force deleting VPC: $VPC_ID"
+
+# 1. Terminate EC2 Instances
+for instance in $(aws ec2 describe-instances \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "Reservations[].Instances[].InstanceId" \
+  --output text); do
+  echo "Terminating EC2 Instance: $instance"
+  aws ec2 terminate-instances --instance-ids $instance
+done
+
+# Wait for instances to terminate
+aws ec2 wait instance-terminated --instance-ids $(aws ec2 describe-instances \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "Reservations[].Instances[].InstanceId" \
+  --output text || true) || true
+
+# 2. Delete NAT Gateways
+for nat in $(aws ec2 describe-nat-gateways \
+  --filter "Name=vpc-id,Values=$VPC_ID" \
+  --query "NatGateways[].NatGatewayId" \
+  --output text); do
+  echo "Deleting NAT Gateway: $nat"
+  aws ec2 delete-nat-gateway --nat-gateway-id $nat
+done
+
+# Wait for NAT gateways to delete
+for nat in $(aws ec2 describe-nat-gateways \
+  --filter "Name=vpc-id,Values=$VPC_ID" \
+  --query "NatGateways[].NatGatewayId" \
+  --output text); do
+  aws ec2 wait nat-gateway-deleted --nat-gateway-ids $nat
+done
+
+# 3. Release Elastic IPs
+for eip in $(aws ec2 describe-addresses \
+  --filters "Name=domain,Values=vpc" \
+  --query "Addresses[?VpcId=='$VPC_ID'].AllocationId" \
+  --output text); do
+  echo "Releasing Elastic IP: $eip"
+  aws ec2 release-address --allocation-id $eip
+done
+
+# 4. Delete Load Balancers (Classic + ALB/NLB)
+for elb in $(aws elb describe-load-balancers \
+  --query "LoadBalancerDescriptions[?VPCId=='$VPC_ID'].LoadBalancerName" \
+  --output text 2>/dev/null || true); do
+  echo "Deleting Classic ELB: $elb"
+  aws elb delete-load-balancer --load-balancer-name $elb
+done
+
+for alb in $(aws elbv2 describe-load-balancers \
+  --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
+  --output text 2>/dev/null || true); do
+  echo "Deleting ALB/NLB: $alb"
+  aws elbv2 delete-load-balancer --load-balancer-arn $alb
+done
+
+# 5. Delete Network Interfaces (ENIs)
+for eni in $(aws ec2 describe-network-interfaces \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "NetworkInterfaces[].NetworkInterfaceId" \
+  --output text); do
+  echo "Deleting ENI: $eni"
+  aws ec2 delete-network-interface --network-interface-id $eni || true
+done
+
+# 6. Delete Internet Gateways
+for igw in $(aws ec2 describe-internet-gateways \
+  --filter "Name=attachment.vpc-id,Values=$VPC_ID" \
+  --query "InternetGateways[].InternetGatewayId" \
+  --output text); do
+  echo "Detaching & Deleting IGW: $igw"
+  aws ec2 detach-internet-gateway --internet-gateway-id $igw --vpc-id $VPC_ID || true
+  aws ec2 delete-internet-gateway --internet-gateway-id $igw
+done
+
+# 7. Delete Subnets
+for subnet in $(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "Subnets[].SubnetId" \
+  --output text); do
+  echo "Deleting Subnet: $subnet"
+  aws ec2 delete-subnet --subnet-id $subnet
+done
+
+# 8. Delete Route Tables (except main)
+for rtb in $(aws ec2 describe-route-tables \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "RouteTables[].RouteTableId" \
+  --output text); do
+  echo "Deleting Route Table: $rtb"
+  aws ec2 delete-route-table --route-table-id $rtb || true
+done
+
+# 9. Delete Security Groups (except default)
+for sg in $(aws ec2 describe-security-groups \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "SecurityGroups[?GroupName!='default'].GroupId" \
+  --output text); do
+  echo "Deleting Security Group: $sg"
+  aws ec2 delete-security-group --group-id $sg
+done
+
+# 10. Finally delete the VPC
+echo "Deleting VPC: $VPC_ID"
+aws ec2 delete-vpc --vpc-id $VPC_ID
+
+echo "✅ VPC $VPC_ID and all dependencies deleted."
