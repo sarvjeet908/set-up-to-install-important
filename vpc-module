@@ -1,0 +1,19 @@
+module "vpc" {
+  source = "terraform-aws-modules/vpc/aws"
+
+  name = "my-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["ap-south-1a", "ap-south-1b"]
+  private_subnets = ["10.0.0.0/18", "10.0.64.0/18"]
+  public_subnets  = ["10.0.128.0/18", "10.0.192.0/18"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+  enable_vpn_gateway = true
+
+  tags = {
+    Terraform = "true"
+    Environment = "dev"
+  }
+}
