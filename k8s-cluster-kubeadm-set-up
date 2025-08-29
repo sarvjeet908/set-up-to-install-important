@@ -1,0 +1,67 @@
+K8s-Cluster-Installation-Steps
+==============================================
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Note:
+Install mobaxterm installer edition https://mobaxterm.mobatek.net/download-home-edition.html , 
+open mobaxterm --> session --> ssh --> in Remote host <paste-Public ip> --> select  specify username & provide username
+under advanced SSH settings --> select use private key --> select pem file --> ok
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+launch 3 instances with 
+------------------------
+- ubuntu 22.04 as image
+- type of instance: 
+  -- For Master use  ec2 instance of - t2.medium 
+  -- For two workers ec2 instance of - t2.micro
+- SECURITY GROUP -inbound rules - all traffic & anywhere
+
+
+
+Step1:
+# Update the OS on all nodes
+    sudo apt-get update
+
+# Run only on master node
+    sudo hostnamectl set-hostname k8s-master
+
+#Run  only on worker node - 1 
+    sudo hostnamectl set-hostname k8s-worker-1 
+
+#Run  only on worker node - 2
+    sudo hostnamectl set-hostname k8s-worker-2 
+
+Step2: Run the common.sh script on both master and worker nodes
+document updated of k8s-common.sh(check this doc in git itself)
+
+	   chmod 777 k8s-common.sh
+	   ./k8s-common.sh
+
+Step3: Run Only on K8s-Master Node
+        step1: sudo kubeadm init --pod-network-cidr=192.168.0.0/16
+        step2: 
+  mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+    
+        step3:
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
+
+
+        kubectl get nodes
+
+
+Step4: Run Only on worker node - 1 & worker node - 2
+ 
+      Join both the worker nodes to the cluster, command is already there is output, just copy paste on the worker nodes,
+go to root user and do
+         kubeadm join <MASTER_PRIVATE_IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>
+ 
+
+
+
